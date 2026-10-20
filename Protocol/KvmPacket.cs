@@ -14,6 +14,7 @@ public enum PacketType : byte
     KeyDown = 6,
     KeyUp = 7,
     SwitchScreen = 8,
+    HandshakeDisplayInfo = 9,
 }
 
 public enum MouseButton : byte

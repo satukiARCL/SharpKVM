@@ -322,6 +322,34 @@ public partial class MainWindow : Window
         StopBtn.IsEnabled = true;
 
         _client = new KvmNetworkClient(host, port);
+        _client.OnPacketReceived = packet =>
+        {
+            if (packet.Type == PacketType.HandshakeDisplayInfo)
+            {
+                int remoteW = packet.Param1;
+                int remoteH = packet.Param2;
+                int monitorCount = packet.Param3;
+                Logger.Info($"[Handshake Received] Remote Display: {remoteW}x{remoteH} ({monitorCount} monitors)");
+
+                if (_inputHook != null)
+                {
+                    _inputHook.RemoteScreenWidth = remoteW;
+                    _inputHook.RemoteScreenHeight = remoteH;
+                }
+
+                Dispatcher.Invoke(() =>
+                {
+                    RemoteResolutionText.Text = $"{remoteW} × {remoteH} ({monitorCount}画面)";
+
+                    double baseHeight = 100.0;
+                    double aspect = (double)remoteW / Math.Max(1, remoteH);
+                    double newWidth = Math.Clamp(baseHeight * aspect, 120.0, 240.0);
+                    RemoteMonitor.Width = newWidth;
+                    RemoteMonitor.Height = baseHeight;
+                });
+            }
+        };
+
         try
         {
             await _client.ConnectAsync(_cts.Token);
@@ -423,6 +451,7 @@ public partial class MainWindow : Window
         StartReceiverBtn.IsEnabled = true;
         StopBtn.IsEnabled = false;
 
+        RemoteResolutionText.Text = "未同期 (接続時に検出)";
         SetStatus("停止中", Color.FromRgb(113, 113, 122), Color.FromRgb(39, 39, 42), Color.FromRgb(63, 63, 70));
     }
 }

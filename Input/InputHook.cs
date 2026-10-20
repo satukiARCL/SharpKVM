@@ -33,6 +33,9 @@ public class InputHook : IDisposable
     public EdgeDirection ActiveEdge { get; set; } = EdgeDirection.Right;
     public bool IsControllingRemote { get; set; } = false;
 
+    public int RemoteScreenWidth { get; set; } = 1920;
+    public int RemoteScreenHeight { get; set; } = 1080;
+
     public Action<KvmPacket>? OnPacketGenerated;
     public Action<bool>? OnRemoteControlStateChanged;
 
@@ -146,7 +149,7 @@ public class InputHook : IDisposable
                                 if (x <= currentMonitor.Left && !IsAnyMonitorContains(x - 2, y))
                                 {
                                     hitOuterEdge = true;
-                                    targetEntryX = 1910;
+                                    targetEntryX = RemoteScreenWidth - 10;
                                     targetEntryY = y;
                                 }
                                 break;
@@ -156,7 +159,7 @@ public class InputHook : IDisposable
                                 {
                                     hitOuterEdge = true;
                                     targetEntryX = x;
-                                    targetEntryY = 1070;
+                                    targetEntryY = RemoteScreenHeight - 10;
                                 }
                                 break;
 
@@ -237,7 +240,7 @@ public class InputHook : IDisposable
 
                                 case EdgeDirection.Left:
                                     // Moving rightwards past remote right edge returns to local left edge
-                                    if (_remoteCursorX >= 1920)
+                                    if (_remoteCursorX >= RemoteScreenWidth)
                                     {
                                         returnToLocal = true;
                                         var m = _monitors.Find(m => m.Contains(x, _remoteCursorY)) ?? _monitors[0];
@@ -248,7 +251,7 @@ public class InputHook : IDisposable
 
                                 case EdgeDirection.Top:
                                     // Moving downwards past remote bottom edge returns to local top edge
-                                    if (_remoteCursorY >= 1080)
+                                    if (_remoteCursorY >= RemoteScreenHeight)
                                     {
                                         returnToLocal = true;
                                         returnLocalX = _remoteCursorX;

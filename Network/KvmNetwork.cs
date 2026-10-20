@@ -1,11 +1,14 @@
 using System;
+using System.IO;
+using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
-using SharpKVM.Input;
+using SharpKVM.Config;
 using SharpKVM.Protocol;
+using SharpKVM.Utils;
 
 namespace SharpKVM.Network;
 
@@ -28,9 +31,7 @@ public class KvmNetworkServer
         _listener.Start();
         _isRunning = true;
 
-        Console.ForegroundColor = ConsoleColor.Cyan;
-        Console.WriteLine($"[Server] Listening on 0.0.0.0:{_port} (TCP_NODELAY)...");
-        Console.ResetColor();
+        Logger.Info($"[Server] Listening on 0.0.0.0:{_port}...");
 
         while (_isRunning && !ct.IsCancellationRequested)
         {
@@ -38,7 +39,7 @@ public class KvmNetworkServer
             {
                 var client = await _listener.AcceptTcpClientAsync(ct);
                 client.NoDelay = true;
-                Console.WriteLine($"[Server] Remote client connected from {client.Client.RemoteEndPoint}");
+                Logger.Info($"[Server] Remote client connected from {client.Client.RemoteEndPoint}");
 
                 _ = HandleClientAsync(client, ct);
             }
@@ -48,7 +49,7 @@ public class KvmNetworkServer
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[Server Error] {ex.Message}");
+                Logger.Error("[Server Error]", ex);
             }
         }
     }
@@ -58,8 +59,35 @@ public class KvmNetworkServer
         using (client)
         await using (var stream = client.GetStream())
         {
-            byte[] buffer = new byte[13]; // Fixed 13 bytes packet size
+            // 1. Send Local Display Info Handshake to connected Client
+            try
+            {
+                var monitors = MonitorInfo.GetAllMonitors();
+                int totalW = 1920;
+                int totalH = 1080;
+                int count = monitors.Count;
 
+                if (count > 0)
+                {
+                    int minX = monitors.Min(m => m.Left);
+                    int minY = monitors.Min(m => m.Top);
+                    int maxX = monitors.Max(m => m.Right);
+                    int maxY = monitors.Max(m => m.Bottom);
+                    totalW = maxX - minX;
+                    totalH = maxY - minY;
+                }
+
+                byte[] handshake = KvmPacket.Serialize(PacketType.HandshakeDisplayInfo, totalW, totalH, count);
+                await stream.WriteAsync(handshake, ct);
+                Logger.Info($"[Server] Sent display handshake: {totalW}x{totalH} ({count} monitors)");
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("[Server Handshake Error]", ex);
+            }
+
+            // 2. Receive loop
+            byte[] buffer = new byte[13];
             while (!ct.IsCancellationRequested)
             {
                 int bytesRead = 0;
@@ -97,6 +125,7 @@ public class KvmNetworkClient
         SingleWriter = false
     });
 
+    public Action<KvmPacket>? OnPacketReceived;
     public bool IsConnected => _client != null && _client.Connected;
 
     public KvmNetworkClient(string host, int port = 24800)
@@ -112,15 +141,14 @@ public class KvmNetworkClient
             NoDelay = true
         };
 
-        Console.WriteLine($"[Client] Connecting to {_host}:{_port}...");
+        Logger.Info($"[Client] Connecting to {_host}:{_port}...");
         await _client.ConnectAsync(_host, _port, ct);
         _stream = _client.GetStream();
 
-        Console.ForegroundColor = ConsoleColor.Green;
-        Console.WriteLine($"[Client] Connected successfully to {_host}:{_port}!");
-        Console.ResetColor();
+        Logger.Info($"[Client] Connected successfully to {_host}:{_port}!");
 
         _ = SendLoopAsync(ct);
+        _ = ReceiveLoopAsync(ct);
     }
 
     public void QueuePacket(KvmPacket packet)
@@ -148,7 +176,35 @@ public class KvmNetworkClient
         catch (OperationCanceledException) { }
         catch (Exception ex)
         {
-            Console.WriteLine($"[Client Send Error] {ex.Message}");
+            Logger.Error("[Client Send Error]", ex);
+        }
+    }
+
+    private async Task ReceiveLoopAsync(CancellationToken ct)
+    {
+        try
+        {
+            byte[] buffer = new byte[13];
+            while (!ct.IsCancellationRequested && _stream != null)
+            {
+                int bytesRead = 0;
+                while (bytesRead < 13)
+                {
+                    int read = await _stream.ReadAsync(buffer.AsMemory(bytesRead, 13 - bytesRead), ct);
+                    if (read == 0) return; // Disconnected
+                    bytesRead += read;
+                }
+
+                if (KvmPacket.TryDeserialize(buffer, out var packet))
+                {
+                    OnPacketReceived?.Invoke(packet);
+                }
+            }
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            Logger.Error("[Client Receive Error]", ex);
         }
     }
 

@@ -124,7 +124,8 @@
                             <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
                                 <TextBlock Text="🖥 相手 PC (Remote)" FontWeight="Bold" FontSize="13" Foreground="White" HorizontalAlignment="Center"/>
                                 <TextBlock x:Name="RemoteHostLabel" Text="127.0.0.1" FontSize="11" Foreground="#6EE7B7" HorizontalAlignment="Center" Margin="0,3,0,0"/>
-                                <Border Background="#047857" CornerRadius="4" Padding="6,2" Margin="0,5,0,0" HorizontalAlignment="Center">
+                                <TextBlock x:Name="RemoteResolutionText" Text="未同期 (接続時に検出)" FontSize="10" Foreground="#A7F3D0" HorizontalAlignment="Center" Margin="0,2,0,0"/>
+                                <Border Background="#047857" CornerRadius="4" Padding="6,2" Margin="0,4,0,0" HorizontalAlignment="Center">
                                     <TextBlock Text="ドラッグして配置" FontSize="10" Foreground="White"/>
                                 </Border>
                             </StackPanel>
