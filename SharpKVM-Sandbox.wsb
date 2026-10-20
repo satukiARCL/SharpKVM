@@ -1,0 +1,13 @@
+<Configuration>
+  <Networking>Default</Networking>
+  <MappedFolders>
+    <MappedFolder>
+      <HostFolder>C:\dev\SharpKVM\publish-selfcontained</HostFolder>
+      <SandboxFolder>C:\Users\WDAGUtilityAccount\Desktop\SharpKVM</SandboxFolder>
+      <ReadOnly>true</ReadOnly>
+    </MappedFolder>
+  </MappedFolders>
+  <LogonCommand>
+    <Command>C:\Users\WDAGUtilityAccount\Desktop\SharpKVM\run_in_sandbox.bat</Command>
+  </LogonCommand>
+</Configuration>

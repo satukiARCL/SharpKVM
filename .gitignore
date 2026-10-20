@@ -3,6 +3,7 @@ bin/
 obj/
 publish/
 publish-folder/
+publish-selfcontained/
 *.zip
 *.user
 *.suo
