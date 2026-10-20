@@ -150,7 +150,7 @@
                     <TextBox x:Name="RemoteHostInput" Text="127.0.0.1" Width="150" Style="{StaticResource ModernTextBox}" Margin="0,0,16,0" TextChanged="RemoteHostInput_TextChanged"/>
 
                     <TextBlock Text="ポート:" VerticalAlignment="Center" Foreground="#A1A1AA" Margin="0,0,8,0" FontWeight="SemiBold"/>
-                    <TextBox x:Name="PortInput" Text="24800" Width="80" Style="{StaticResource ModernTextBox}" Margin="0,0,16,0"/>
+                    <TextBox x:Name="PortInput" Text="24850" Width="80" Style="{StaticResource ModernTextBox}" Margin="0,0,16,0"/>
                 </StackPanel>
 
                 <StackPanel Orientation="Horizontal" Grid.Column="2" HorizontalAlignment="Right">

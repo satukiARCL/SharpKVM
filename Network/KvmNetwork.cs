@@ -19,19 +19,37 @@ public class KvmNetworkServer
     private volatile bool _isRunning;
 
     public Action<KvmPacket>? OnPacketReceived;
+    public Action<string>? OnClientConnected;
+    public Action? OnClientDisconnected;
+    public Action<string>? OnError;
 
-    public KvmNetworkServer(int port = 24800)
+    public KvmNetworkServer(int port = 24850)
     {
         _port = port;
     }
 
     public async Task StartAsync(CancellationToken ct)
     {
-        _listener = new TcpListener(IPAddress.Any, _port);
-        _listener.Start();
-        _isRunning = true;
-
-        Logger.Info($"[Server] Listening on 0.0.0.0:{_port}...");
+        try
+        {
+            _listener = new TcpListener(IPAddress.Any, _port);
+            _listener.Start();
+            _isRunning = true;
+            Logger.Info($"[Server] Listening on 0.0.0.0:{_port}...");
+        }
+        catch (SocketException ex)
+        {
+            string msg = $"ポート {_port} のバインドに失敗しました。他のアプリ(Synergy/Barrier/Deskflow等)が使用中の可能性があります。";
+            Logger.Error($"[Server Error] {msg}", ex);
+            OnError?.Invoke(msg);
+            return;
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"[Server Error] Unexpected error starting server on port {_port}", ex);
+            OnError?.Invoke($"サーバー起動エラー: {ex.Message}");
+            return;
+        }
 
         while (_isRunning && !ct.IsCancellationRequested)
         {
@@ -56,53 +74,63 @@ public class KvmNetworkServer
 
     private async Task HandleClientAsync(TcpClient client, CancellationToken ct)
     {
-        using (client)
-        await using (var stream = client.GetStream())
+        string clientEp = client.Client.RemoteEndPoint?.ToString() ?? "Unknown";
+        OnClientConnected?.Invoke(clientEp);
+        try
         {
-            // 1. Send Local Display Info Handshake to connected Client
-            try
+            using (client)
+            await using (var stream = client.GetStream())
             {
-                var monitors = MonitorInfo.GetAllMonitors();
-                int totalW = 1920;
-                int totalH = 1080;
-                int count = monitors.Count;
-
-                if (count > 0)
+                // 1. Send Local Display Info Handshake to connected Client
+                try
                 {
-                    int minX = monitors.Min(m => m.Left);
-                    int minY = monitors.Min(m => m.Top);
-                    int maxX = monitors.Max(m => m.Right);
-                    int maxY = monitors.Max(m => m.Bottom);
-                    totalW = maxX - minX;
-                    totalH = maxY - minY;
+                    var monitors = MonitorInfo.GetAllMonitors();
+                    int totalW = 1920;
+                    int totalH = 1080;
+                    int count = monitors.Count;
+
+                    if (count > 0)
+                    {
+                        int minX = monitors.Min(m => m.Left);
+                        int minY = monitors.Min(m => m.Top);
+                        int maxX = monitors.Max(m => m.Right);
+                        int maxY = monitors.Max(m => m.Bottom);
+                        totalW = maxX - minX;
+                        totalH = maxY - minY;
+                    }
+
+                    byte[] handshake = KvmPacket.Serialize(PacketType.HandshakeDisplayInfo, totalW, totalH, count);
+                    await stream.WriteAsync(handshake, ct);
+                    Logger.Info($"[Server] Sent display handshake: {totalW}x{totalH} ({count} monitors)");
+                }
+                catch (Exception ex)
+                {
+                    Logger.Error("[Server Handshake Error]", ex);
                 }
 
-                byte[] handshake = KvmPacket.Serialize(PacketType.HandshakeDisplayInfo, totalW, totalH, count);
-                await stream.WriteAsync(handshake, ct);
-                Logger.Info($"[Server] Sent display handshake: {totalW}x{totalH} ({count} monitors)");
-            }
-            catch (Exception ex)
-            {
-                Logger.Error("[Server Handshake Error]", ex);
-            }
-
-            // 2. Receive loop
-            byte[] buffer = new byte[13];
-            while (!ct.IsCancellationRequested)
-            {
-                int bytesRead = 0;
-                while (bytesRead < 13)
+                // 2. Receive loop
+                byte[] buffer = new byte[13];
+                while (!ct.IsCancellationRequested)
                 {
-                    int read = await stream.ReadAsync(buffer.AsMemory(bytesRead, 13 - bytesRead), ct);
-                    if (read == 0) return; // Disconnected
-                    bytesRead += read;
-                }
+                    int bytesRead = 0;
+                    while (bytesRead < 13)
+                    {
+                        int read = await stream.ReadAsync(buffer.AsMemory(bytesRead, 13 - bytesRead), ct);
+                        if (read == 0) return; // Disconnected
+                        bytesRead += read;
+                    }
 
-                if (KvmPacket.TryDeserialize(buffer, out var packet))
-                {
-                    OnPacketReceived?.Invoke(packet);
+                    if (KvmPacket.TryDeserialize(buffer, out var packet))
+                    {
+                        OnPacketReceived?.Invoke(packet);
+                    }
                 }
             }
+        }
+        finally
+        {
+            Logger.Info($"[Server] Client disconnected: {clientEp}");
+            OnClientDisconnected?.Invoke();
         }
     }
 
@@ -128,7 +156,7 @@ public class KvmNetworkClient
     public Action<KvmPacket>? OnPacketReceived;
     public bool IsConnected => _client != null && _client.Connected;
 
-    public KvmNetworkClient(string host, int port = 24800)
+    public KvmNetworkClient(string host, int port = 24850)
     {
         _host = host;
         _port = port;

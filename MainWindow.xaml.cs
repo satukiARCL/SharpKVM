@@ -68,6 +68,9 @@ public partial class MainWindow : Window
     {
         RenderLocalMonitors();
         ApplyConfigToUI();
+
+        // アプリ起動時に自動的に受信待機を開始する (接続先PCでの押し忘れ防止)
+        StartReceiverBtn_Click(this, new RoutedEventArgs());
     }
 
     private void RenderLocalMonitors()
@@ -82,89 +85,96 @@ public partial class MainWindow : Window
 
             SubheaderText.Text = $"マルチディスプレイ検出: {_monitors.Count} 台のモニターがアクティブです";
 
-        int minX = _monitors.Min(m => m.Left);
-        int minY = _monitors.Min(m => m.Top);
-        int maxX = _monitors.Max(m => m.Right);
-        int maxY = _monitors.Max(m => m.Bottom);
+            int minX = _monitors.Min(m => m.Left);
+            int minY = _monitors.Min(m => m.Top);
+            int maxX = _monitors.Max(m => m.Right);
+            int maxY = _monitors.Max(m => m.Bottom);
 
-        int totalW = Math.Max(1, maxX - minX);
-        int totalH = Math.Max(1, maxY - minY);
+            int totalW = Math.Max(1, maxX - minX);
+            int totalH = Math.Max(1, maxY - minY);
 
-        // Max display area on canvas for local monitors
-        double maxCanvasW = 320.0;
-        double maxCanvasH = 220.0;
-        _displayScale = Math.Min(maxCanvasW / totalW, maxCanvasH / totalH);
-        double scale = _displayScale;
+            double canvasW = DisplayCanvas.ActualWidth > 0 ? DisplayCanvas.ActualWidth : 800.0;
+            double canvasH = DisplayCanvas.ActualHeight > 0 ? DisplayCanvas.ActualHeight : 420.0;
 
-        double baseLeft = 120.0;
-        double baseTop = 80.0;
+            // 左右・上下に相手カード（幅 200〜260px）を置くための十分な余白を確保するため、自PCモニター群の最大幅を 280px に設定
+            double maxCanvasW = 280.0;
+            double maxCanvasH = 180.0;
+            _displayScale = Math.Min(maxCanvasW / totalW, maxCanvasH / totalH);
+            double scale = _displayScale;
 
-        _localVirtualBoundsCanvas = new Rect(baseLeft, baseTop, totalW * scale, totalH * scale);
+            double clusterW = totalW * scale;
+            double clusterH = totalH * scale;
 
-        int index = 1;
-        foreach (var mon in _monitors)
-        {
-            double w = Math.Max(70, mon.Width * scale);
-            double h = Math.Max(50, mon.Height * scale);
-            double x = baseLeft + (mon.Left - minX) * scale;
-            double y = baseTop + (mon.Top - minY) * scale;
+            // 自PCモニター群をキャンバスの中央に配置
+            double baseLeft = Math.Max(20.0, (canvasW - clusterW) / 2.0);
+            double baseTop = Math.Max(20.0, (canvasH - clusterH) / 2.0);
 
-            var border = new Border
+            _localVirtualBoundsCanvas = new Rect(baseLeft, baseTop, clusterW, clusterH);
+
+            int index = 1;
+            foreach (var mon in _monitors)
             {
-                Width = w,
-                Height = h,
-                Background = mon.IsPrimary ? new SolidColorBrush(Color.FromRgb(30, 58, 138)) : new SolidColorBrush(Color.FromRgb(30, 41, 59)),
-                BorderBrush = mon.IsPrimary ? new SolidColorBrush(Color.FromRgb(59, 130, 246)) : new SolidColorBrush(Color.FromRgb(96, 165, 250)),
-                BorderThickness = new Thickness(2),
-                CornerRadius = new CornerRadius(6)
-            };
+                double w = Math.Max(70, mon.Width * scale);
+                double h = Math.Max(50, mon.Height * scale);
+                double x = baseLeft + (mon.Left - minX) * scale;
+                double y = baseTop + (mon.Top - minY) * scale;
 
-            var stack = new StackPanel
-            {
-                HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Center
-            };
+                var border = new Border
+                {
+                    Width = w,
+                    Height = h,
+                    Background = mon.IsPrimary ? new SolidColorBrush(Color.FromRgb(30, 58, 138)) : new SolidColorBrush(Color.FromRgb(30, 41, 59)),
+                    BorderBrush = mon.IsPrimary ? new SolidColorBrush(Color.FromRgb(59, 130, 246)) : new SolidColorBrush(Color.FromRgb(96, 165, 250)),
+                    BorderThickness = new Thickness(2),
+                    CornerRadius = new CornerRadius(6)
+                };
 
-            string title = mon.IsPrimary ? $"🖥 ディスプレイ {index} (メイン)" : $"🖥 ディスプレイ {index}";
-            stack.Children.Add(new TextBlock
-            {
-                Text = title,
-                FontSize = 11,
-                FontWeight = FontWeights.Bold,
-                Foreground = Brushes.White,
-                HorizontalAlignment = HorizontalAlignment.Center
-            });
+                var stack = new StackPanel
+                {
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center
+                };
 
-            stack.Children.Add(new TextBlock
-            {
-                Text = $"{mon.Width} × {mon.Height}",
-                FontSize = 10,
-                Foreground = new SolidColorBrush(Color.FromRgb(147, 197, 253)),
-                HorizontalAlignment = HorizontalAlignment.Center,
-                Margin = new Thickness(0, 2, 0, 0)
-            });
+                string title = mon.IsPrimary ? $"🖥 ディスプレイ {index} (メイン)" : $"🖥 ディスプレイ {index}";
+                stack.Children.Add(new TextBlock
+                {
+                    Text = title,
+                    FontSize = 11,
+                    FontWeight = FontWeights.Bold,
+                    Foreground = Brushes.White,
+                    HorizontalAlignment = HorizontalAlignment.Center
+                });
 
-            border.Child = stack;
+                stack.Children.Add(new TextBlock
+                {
+                    Text = $"{mon.Width} × {mon.Height}",
+                    FontSize = 10,
+                    Foreground = new SolidColorBrush(Color.FromRgb(147, 197, 253)),
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    Margin = new Thickness(0, 2, 0, 0)
+                });
 
-            Canvas.SetLeft(border, x);
-            Canvas.SetTop(border, y);
+                border.Child = stack;
 
-            LocalMonitorsCanvas.Children.Add(border);
-            _localMonitorRects.Add(new Rect(x, y, w, h));
-            index++;
+                Canvas.SetLeft(border, x);
+                Canvas.SetTop(border, y);
+
+                LocalMonitorsCanvas.Children.Add(border);
+                _localMonitorRects.Add(new Rect(x, y, w, h));
+                index++;
+            }
+
+            // 相手カードの初期サイズを同一スケールで算出
+            RemoteMonitor.Width = Math.Max(80.0, 1920 * _displayScale);
+            RemoteMonitor.Height = Math.Max(50.0, 1080 * _displayScale);
+
+            Logger.Info("Local monitors rendered successfully.");
         }
-
-        // Initially sync remote card size using the exact same display scale
-        RemoteMonitor.Width = Math.Max(80.0, 1920 * _displayScale);
-        RemoteMonitor.Height = Math.Max(50.0, 1080 * _displayScale);
-
-        Logger.Info("Local monitors rendered successfully.");
+        catch (Exception ex)
+        {
+            Logger.Error("Error rendering local monitors.", ex);
+        }
     }
-    catch (Exception ex)
-    {
-        Logger.Error("Error rendering local monitors.", ex);
-    }
-}
 
     private void ApplyConfigToUI()
     {
@@ -172,12 +182,33 @@ public partial class MainWindow : Window
         RemoteHostLabel.Text = _config.RemoteHost;
         PortInput.Text = _config.Port.ToString();
 
-        // Ensure remote monitor is within visible bounds
-        Canvas.SetLeft(RemoteMonitor, _config.RemoteCanvasX);
-        Canvas.SetTop(RemoteMonitor, _config.RemoteCanvasY);
+        double canvasW = DisplayCanvas.ActualWidth > 0 ? DisplayCanvas.ActualWidth : 800.0;
+        double remoteW = RemoteMonitor.Width > 0 ? RemoteMonitor.Width : 160.0;
+        double remoteH = RemoteMonitor.Height > 0 ? RemoteMonitor.Height : 100.0;
 
-        UpdateRemoteVirtualBounds(_config.RemoteCanvasX, _config.RemoteCanvasY, RemoteMonitor.Width, RemoteMonitor.Height);
-        UpdateEdgeDirectionIndicator();
+        // 既存設定が自PCモニターと被っているか、画面外の場合は自動で綺麗に再配置
+        bool isOverlapping = false;
+        var remoteRect = new Rect(_config.RemoteCanvasX, _config.RemoteCanvasY, remoteW, remoteH);
+        foreach (var lRect in _localMonitorRects)
+        {
+            if (remoteRect.IntersectsWith(lRect))
+            {
+                isOverlapping = true;
+                break;
+            }
+        }
+
+        if (isOverlapping || _config.RemoteCanvasX < 10 || _config.RemoteCanvasX > canvasW - 50)
+        {
+            ApplyLayoutDirectionToCanvas(_config.CurrentEdge);
+        }
+        else
+        {
+            Canvas.SetLeft(RemoteMonitor, _config.RemoteCanvasX);
+            Canvas.SetTop(RemoteMonitor, _config.RemoteCanvasY);
+            UpdateRemoteVirtualBounds(_config.RemoteCanvasX, _config.RemoteCanvasY, remoteW, remoteH);
+            UpdateEdgeDirectionIndicator();
+        }
     }
 
     private void RemoteMonitor_MouseDown(object sender, MouseButtonEventArgs e)
@@ -329,49 +360,93 @@ public partial class MainWindow : Window
 
     private void ApplyLayoutDirectionToCanvas(EdgeDirection edge)
     {
-        if (_localMonitorRects.Count == 0) return;
-
-        double remoteW = RemoteMonitor.ActualWidth;
-        double remoteH = RemoteMonitor.ActualHeight;
-        const double Spacing = 20.0;
-
-        var firstMon = _localMonitorRects[0];
-        double newX = Canvas.GetLeft(RemoteMonitor);
-        double newY = Canvas.GetTop(RemoteMonitor);
-
-        switch (edge)
+        try
         {
-            case EdgeDirection.Left:
-                newX = firstMon.Left - remoteW - Spacing;
-                newY = firstMon.Top;
-                break;
-            case EdgeDirection.Right:
-                newX = firstMon.Right + Spacing;
-                newY = firstMon.Top;
-                break;
-            case EdgeDirection.Top:
-                newX = firstMon.Left;
-                newY = firstMon.Top - remoteH - Spacing;
-                break;
-            case EdgeDirection.Bottom:
-                newX = firstMon.Left;
-                newY = firstMon.Bottom + Spacing;
-                break;
+            Logger.Info($"[ApplyLayout] Start applying edge: {edge}");
+
+            if (_localMonitorRects.Count == 0)
+            {
+                RenderLocalMonitors();
+            }
+
+            if (_localMonitorRects.Count == 0)
+            {
+                Logger.Warn("[ApplyLayout] No local monitors available.");
+                return;
+            }
+
+            double canvasW = DisplayCanvas.ActualWidth > 0 ? DisplayCanvas.ActualWidth : 800.0;
+            double canvasH = DisplayCanvas.ActualHeight > 0 ? DisplayCanvas.ActualHeight : 420.0;
+
+            double remoteW = RemoteMonitor.Width > 0 ? RemoteMonitor.Width : 160.0;
+            double remoteH = RemoteMonitor.Height > 0 ? RemoteMonitor.Height : 100.0;
+            const double Spacing = 20.0;
+
+            double localLeft = _localVirtualBoundsCanvas.Left;
+            double localRight = _localVirtualBoundsCanvas.Right;
+            double localTop = _localVirtualBoundsCanvas.Top;
+            double localBottom = _localVirtualBoundsCanvas.Bottom;
+
+            double newX = localRight + Spacing;
+            double newY = localTop + (_localVirtualBoundsCanvas.Height - remoteH) / 2.0;
+
+            switch (edge)
+            {
+                case EdgeDirection.Left:
+                    newX = localLeft - remoteW - Spacing;
+                    newY = localTop + (_localVirtualBoundsCanvas.Height - remoteH) / 2.0;
+                    break;
+                case EdgeDirection.Right:
+                    newX = localRight + Spacing;
+                    newY = localTop + (_localVirtualBoundsCanvas.Height - remoteH) / 2.0;
+                    break;
+                case EdgeDirection.Top:
+                    newX = localLeft + (_localVirtualBoundsCanvas.Width - remoteW) / 2.0;
+                    newY = localTop - remoteH - Spacing;
+                    break;
+                case EdgeDirection.Bottom:
+                    newX = localLeft + (_localVirtualBoundsCanvas.Width - remoteW) / 2.0;
+                    newY = localBottom + Spacing;
+                    break;
+            }
+
+            // 衝突回避: 自PCモニターカードと重ならないように外側へ押し出す
+            foreach (var lRect in _localMonitorRects)
+            {
+                var curRect = new Rect(newX, newY, remoteW, remoteH);
+                if (curRect.IntersectsWith(lRect))
+                {
+                    if (edge == EdgeDirection.Left) newX = lRect.Left - remoteW - Spacing;
+                    else if (edge == EdgeDirection.Right) newX = lRect.Right + Spacing;
+                    else if (edge == EdgeDirection.Top) newY = lRect.Top - remoteH - Spacing;
+                    else if (edge == EdgeDirection.Bottom) newY = lRect.Bottom + Spacing;
+                }
+            }
+
+            double minX = 10.0;
+            double maxX = Math.Max(minX, canvasW - remoteW - 10.0);
+            double minY = 10.0;
+            double maxY = Math.Max(minY, canvasH - remoteH - 10.0);
+
+            newX = Math.Clamp(newX, minX, maxX);
+            newY = Math.Clamp(newY, minY, maxY);
+
+            Canvas.SetLeft(RemoteMonitor, newX);
+            Canvas.SetTop(RemoteMonitor, newY);
+
+            _config.RemoteCanvasX = newX;
+            _config.RemoteCanvasY = newY;
+            _config.CurrentEdge = edge;
+            _config.Save();
+
+            UpdateRemoteVirtualBounds(newX, newY, remoteW, remoteH);
+            UpdateEdgeDirectionIndicator();
+            Logger.Info($"[ApplyLayout] Successfully moved RemoteMonitor to {edge} at ({newX:F0},{newY:F0})");
         }
-
-        newX = Math.Clamp(newX, 10, DisplayCanvas.ActualWidth - remoteW - 10);
-        newY = Math.Clamp(newY, 10, DisplayCanvas.ActualHeight - remoteH - 10);
-
-        Canvas.SetLeft(RemoteMonitor, newX);
-        Canvas.SetTop(RemoteMonitor, newY);
-
-        _config.RemoteCanvasX = newX;
-        _config.RemoteCanvasY = newY;
-        _config.CurrentEdge = edge;
-        _config.Save();
-
-        UpdateRemoteVirtualBounds(newX, newY, remoteW, remoteH);
-        Logger.Info($"[Layout Sync] Applied inverse layout to canvas: {edge} at ({newX:F0},{newY:F0})");
+        catch (Exception ex)
+        {
+            Logger.Error("[ApplyLayout] Error placing RemoteMonitor", ex);
+        }
     }
 
     private void UpdateRemoteVirtualBounds(double canvasX, double canvasY, double canvasW, double canvasH)
@@ -448,7 +523,7 @@ public partial class MainWindow : Window
         _cts = new CancellationTokenSource();
 
         string host = string.IsNullOrWhiteSpace(RemoteHostInput.Text) ? "127.0.0.1" : RemoteHostInput.Text.Trim();
-        if (!int.TryParse(PortInput.Text.Trim(), out int port)) port = 24800;
+        if (!int.TryParse(PortInput.Text.Trim(), out int port)) port = 24850;
 
         _config.RemoteHost = host;
         _config.Port = port;
@@ -498,6 +573,15 @@ public partial class MainWindow : Window
             SetStatus("接続中 (自PC操作中)", Color.FromRgb(59, 130, 246), Color.FromRgb(30, 58, 138), Color.FromRgb(59, 130, 246));
             SendLayoutSyncPacket();
 
+            // 接続直後と少し置いたタイミングの両方で送信してレイアウト同期の確実性を高める
+            _ = Task.Run(async () =>
+            {
+                await Task.Delay(300);
+                SendLayoutSyncPacket();
+                await Task.Delay(700);
+                SendLayoutSyncPacket();
+            });
+
             _inputHook = new InputHook
             {
                 ActiveEdge = _config.CurrentEdge,
@@ -532,7 +616,7 @@ public partial class MainWindow : Window
         StopAll();
         _cts = new CancellationTokenSource();
 
-        if (!int.TryParse(PortInput.Text.Trim(), out int port)) port = 24800;
+        if (!int.TryParse(PortInput.Text.Trim(), out int port)) port = 24850;
         _config.Port = port;
         _config.Save();
 
@@ -541,6 +625,33 @@ public partial class MainWindow : Window
         StopBtn.IsEnabled = true;
 
         _server = new KvmNetworkServer(port);
+        _server.OnError = errMsg =>
+        {
+            Dispatcher.Invoke(() =>
+            {
+                SetStatus($"エラー: {errMsg}", Color.FromRgb(239, 68, 68), Color.FromRgb(127, 29, 29), Color.FromRgb(239, 68, 68));
+                StartSenderBtn.IsEnabled = true;
+                StartReceiverBtn.IsEnabled = true;
+                StopBtn.IsEnabled = false;
+            });
+        };
+        _server.OnClientConnected = clientEp =>
+        {
+            Dispatcher.Invoke(() =>
+            {
+                SetStatus($"接続中 (接続元: {clientEp})", Color.FromRgb(59, 130, 246), Color.FromRgb(30, 58, 138), Color.FromRgb(59, 130, 246));
+                Logger.Info($"[Receiver] Client connected: {clientEp}");
+            });
+        };
+        _server.OnClientDisconnected = () =>
+        {
+            Dispatcher.Invoke(() =>
+            {
+                SetStatus($"受信待機中 (ポート {port})", Color.FromRgb(16, 185, 129), Color.FromRgb(6, 78, 59), Color.FromRgb(16, 185, 129));
+                Logger.Info($"[Receiver] Client disconnected. Returned to listening on port {port}.");
+            });
+        };
+
         _server.OnPacketReceived = packet =>
         {
             switch (packet.Type)

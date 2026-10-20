@@ -15,7 +15,7 @@ public enum EdgeDirection
 public class DisplayLayoutConfig
 {
     public string RemoteHost { get; set; } = "127.0.0.1";
-    public int Port { get; set; } = 24800;
+    public int Port { get; set; } = 24850;
 
     public double LocalCanvasX { get; set; } = 150;
     public double LocalCanvasY { get; set; } = 120;
@@ -43,7 +43,13 @@ public class DisplayLayoutConfig
             if (File.Exists(ConfigPath))
             {
                 string json = File.ReadAllText(ConfigPath);
-                return JsonSerializer.Deserialize<DisplayLayoutConfig>(json) ?? new DisplayLayoutConfig();
+                var config = JsonSerializer.Deserialize<DisplayLayoutConfig>(json) ?? new DisplayLayoutConfig();
+                // 24800 is the default port for Deskflow/Synergy/Barrier, which causes collision. Upgrade to 24850.
+                if (config.Port == 24800)
+                {
+                    config.Port = 24850;
+                }
+                return config;
             }
         }
         catch { }
