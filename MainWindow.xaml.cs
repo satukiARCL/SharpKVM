@@ -23,6 +23,7 @@ public partial class MainWindow : Window
     private bool _isDragging = false;
     private Point _dragStartOffset;
     private double _displayScale = 0.1;
+    private readonly List<Rect> _localMonitorRects = new();
 
     private Rect _localVirtualBoundsCanvas; // Canvas bounding box for all local monitors
 
@@ -75,6 +76,7 @@ public partial class MainWindow : Window
         {
             Logger.Info("Rendering local monitors on canvas...");
             LocalMonitorsCanvas.Children.Clear();
+            _localMonitorRects.Clear();
 
             if (_monitors.Count == 0) return;
 
@@ -148,6 +150,7 @@ public partial class MainWindow : Window
             Canvas.SetTop(border, y);
 
             LocalMonitorsCanvas.Children.Add(border);
+            _localMonitorRects.Add(new Rect(x, y, w, h));
             index++;
         }
 
@@ -173,6 +176,7 @@ public partial class MainWindow : Window
         Canvas.SetLeft(RemoteMonitor, _config.RemoteCanvasX);
         Canvas.SetTop(RemoteMonitor, _config.RemoteCanvasY);
 
+        UpdateRemoteVirtualBounds(_config.RemoteCanvasX, _config.RemoteCanvasY, RemoteMonitor.Width, RemoteMonitor.Height);
         UpdateEdgeDirectionIndicator();
     }
 
@@ -205,30 +209,62 @@ public partial class MainWindow : Window
             double remoteW = RemoteMonitor.ActualWidth;
             double remoteH = RemoteMonitor.ActualHeight;
 
-            const double SnapDistance = 45.0;
-            const double Spacing = 20.0;
+            // 1. Snapping to adjacent edges of local monitor cards
+            const double SnapDistance = 35.0;
+            const double Spacing = 15.0;
 
-            // Snap Right
-            if (Math.Abs(newX - (localX + localW + Spacing)) < SnapDistance)
+            foreach (var lRect in _localMonitorRects)
             {
-                newX = localX + localW + Spacing;
-            }
-            // Snap Left
-            else if (Math.Abs(newX - (localX - remoteW - Spacing)) < SnapDistance)
-            {
-                newX = localX - remoteW - Spacing;
+                // Snap Right of monitor
+                if (Math.Abs(newX - (lRect.Right + Spacing)) < SnapDistance && Math.Abs(newY - lRect.Top) < SnapDistance * 1.5)
+                {
+                    newX = lRect.Right + Spacing;
+                    newY = lRect.Top;
+                }
+                // Snap Left of monitor
+                else if (Math.Abs(newX - (lRect.Left - remoteW - Spacing)) < SnapDistance && Math.Abs(newY - lRect.Top) < SnapDistance * 1.5)
+                {
+                    newX = lRect.Left - remoteW - Spacing;
+                    newY = lRect.Top;
+                }
+                // Snap Top of monitor
+                else if (Math.Abs(newY - (lRect.Top - remoteH - Spacing)) < SnapDistance && Math.Abs(newX - lRect.Left) < SnapDistance * 1.5)
+                {
+                    newY = lRect.Top - remoteH - Spacing;
+                    newX = lRect.Left;
+                }
+                // Snap Bottom of monitor
+                else if (Math.Abs(newY - (lRect.Bottom + Spacing)) < SnapDistance && Math.Abs(newX - lRect.Left) < SnapDistance * 1.5)
+                {
+                    newY = lRect.Bottom + Spacing;
+                    newX = lRect.Left;
+                }
             }
 
-            // Snap Top
-            if (Math.Abs(newY - (localY - remoteH - Spacing)) < SnapDistance)
+            // 2. Prevent overlapping with any local monitor card (Collision Resolution)
+            foreach (var lRect in _localMonitorRects)
             {
-                newY = localY - remoteH - Spacing;
+                var curRect = new Rect(newX, newY, remoteW, remoteH);
+                if (curRect.IntersectsWith(lRect))
+                {
+                    double overlapX = Math.Min(curRect.Right, lRect.Right) - Math.Max(curRect.Left, lRect.Left);
+                    double overlapY = Math.Min(curRect.Bottom, lRect.Bottom) - Math.Max(curRect.Top, lRect.Top);
+
+                    if (overlapX < overlapY)
+                    {
+                        if (curRect.X < lRect.X) newX = lRect.Left - remoteW - 10;
+                        else newX = lRect.Right + 10;
+                    }
+                    else
+                    {
+                        if (curRect.Y < lRect.Y) newY = lRect.Top - remoteH - 10;
+                        else newY = lRect.Bottom + 10;
+                    }
+                }
             }
-            // Snap Bottom
-            else if (Math.Abs(newY - (localY + localH + Spacing)) < SnapDistance)
-            {
-                newY = localY + localH + Spacing;
-            }
+
+            newX = Math.Clamp(newX, 10, DisplayCanvas.ActualWidth - remoteW - 10);
+            newY = Math.Clamp(newY, 10, DisplayCanvas.ActualHeight - remoteH - 10);
 
             Canvas.SetLeft(RemoteMonitor, newX);
             Canvas.SetTop(RemoteMonitor, newY);
@@ -259,6 +295,7 @@ public partial class MainWindow : Window
                 _inputHook.ActiveEdge = _config.CurrentEdge;
             }
 
+            UpdateRemoteVirtualBounds(newX, newY, remoteW, remoteH);
             UpdateEdgeDirectionIndicator();
         }
     }
@@ -269,8 +306,39 @@ public partial class MainWindow : Window
         {
             _isDragging = false;
             RemoteMonitor.ReleaseMouseCapture();
+            UpdateRemoteVirtualBounds(Canvas.GetLeft(RemoteMonitor), Canvas.GetTop(RemoteMonitor), RemoteMonitor.ActualWidth, RemoteMonitor.ActualHeight);
             _config.Save();
         }
+    }
+
+    private void UpdateRemoteVirtualBounds(double canvasX, double canvasY, double canvasW, double canvasH)
+    {
+        if (_monitors.Count == 0 || _displayScale <= 0) return;
+
+        int minX = _monitors.Min(m => m.Left);
+        int minY = _monitors.Min(m => m.Top);
+        double baseLeft = 120.0;
+        double baseTop = 80.0;
+
+        double virtMinX = minX + (canvasX - baseLeft) / _displayScale;
+        double virtMinY = minY + (canvasY - baseTop) / _displayScale;
+        double virtW = canvasW / _displayScale;
+        double virtH = canvasH / _displayScale;
+
+        _config.RemoteVirtualMinX = virtMinX;
+        _config.RemoteVirtualMaxX = virtMinX + virtW;
+        _config.RemoteVirtualMinY = virtMinY;
+        _config.RemoteVirtualMaxY = virtMinY + virtH;
+
+        if (_inputHook != null)
+        {
+            _inputHook.RemoteVirtualMinX = _config.RemoteVirtualMinX;
+            _inputHook.RemoteVirtualMaxX = _config.RemoteVirtualMaxX;
+            _inputHook.RemoteVirtualMinY = _config.RemoteVirtualMinY;
+            _inputHook.RemoteVirtualMaxY = _config.RemoteVirtualMaxY;
+        }
+
+        Logger.Info($"[Layout] Active Interval: X=[{virtMinX:F0}..{virtMinX + virtW:F0}], Y=[{virtMinY:F0}..{virtMinY + virtH:F0}]");
     }
 
     private void DisplayCanvas_MouseDown(object sender, MouseButtonEventArgs e)
@@ -354,6 +422,7 @@ public partial class MainWindow : Window
                     RemoteMonitor.Width = newWidth;
                     RemoteMonitor.Height = newHeight;
 
+                    UpdateRemoteVirtualBounds(Canvas.GetLeft(RemoteMonitor), Canvas.GetTop(RemoteMonitor), newWidth, newHeight);
                     Logger.Info($"Updated RemoteMonitor card size to {newWidth:F0}x{newHeight:F0} (Scale: {_displayScale:F4})");
                 });
             }
@@ -367,6 +436,10 @@ public partial class MainWindow : Window
             _inputHook = new InputHook
             {
                 ActiveEdge = _config.CurrentEdge,
+                RemoteVirtualMinX = _config.RemoteVirtualMinX,
+                RemoteVirtualMaxX = _config.RemoteVirtualMaxX,
+                RemoteVirtualMinY = _config.RemoteVirtualMinY,
+                RemoteVirtualMaxY = _config.RemoteVirtualMaxY,
                 OnPacketGenerated = packet => _client.QueuePacket(packet),
                 OnRemoteControlStateChanged = isRemote =>
                 {

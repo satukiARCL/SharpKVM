@@ -36,6 +36,12 @@ public class InputHook : IDisposable
     public int RemoteScreenWidth { get; set; } = 1920;
     public int RemoteScreenHeight { get; set; } = 1080;
 
+    // Geometric active interval for remote display placement
+    public double RemoteVirtualMinX { get; set; } = 1920;
+    public double RemoteVirtualMaxX { get; set; } = 3840;
+    public double RemoteVirtualMinY { get; set; } = 0;
+    public double RemoteVirtualMaxY { get; set; } = 1080;
+
     public Action<KvmPacket>? OnPacketGenerated;
     public Action<bool>? OnRemoteControlStateChanged;
 
@@ -139,36 +145,49 @@ public class InputHook : IDisposable
                             case EdgeDirection.Right:
                                 if (x >= currentMonitor.Right - 1 && !IsAnyMonitorContains(x + 2, y))
                                 {
-                                    hitOuterEdge = true;
-                                    targetEntryX = 10;
-                                    targetEntryY = y;
+                                    // Ensure cursor Y is within remote display's configured Y interval
+                                    if (y >= RemoteVirtualMinY && y <= RemoteVirtualMaxY)
+                                    {
+                                        hitOuterEdge = true;
+                                        targetEntryX = 10;
+                                        targetEntryY = (int)Math.Clamp(y - RemoteVirtualMinY, 0, RemoteScreenHeight - 1);
+                                    }
                                 }
                                 break;
 
                             case EdgeDirection.Left:
                                 if (x <= currentMonitor.Left && !IsAnyMonitorContains(x - 2, y))
                                 {
-                                    hitOuterEdge = true;
-                                    targetEntryX = RemoteScreenWidth - 10;
-                                    targetEntryY = y;
+                                    if (y >= RemoteVirtualMinY && y <= RemoteVirtualMaxY)
+                                    {
+                                        hitOuterEdge = true;
+                                        targetEntryX = RemoteScreenWidth - 10;
+                                        targetEntryY = (int)Math.Clamp(y - RemoteVirtualMinY, 0, RemoteScreenHeight - 1);
+                                    }
                                 }
                                 break;
 
                             case EdgeDirection.Top:
                                 if (y <= currentMonitor.Top && !IsAnyMonitorContains(x, y - 2))
                                 {
-                                    hitOuterEdge = true;
-                                    targetEntryX = x;
-                                    targetEntryY = RemoteScreenHeight - 10;
+                                    if (x >= RemoteVirtualMinX && x <= RemoteVirtualMaxX)
+                                    {
+                                        hitOuterEdge = true;
+                                        targetEntryX = (int)Math.Clamp(x - RemoteVirtualMinX, 0, RemoteScreenWidth - 1);
+                                        targetEntryY = RemoteScreenHeight - 10;
+                                    }
                                 }
                                 break;
 
                             case EdgeDirection.Bottom:
                                 if (y >= currentMonitor.Bottom - 1 && !IsAnyMonitorContains(x, y + 2))
                                 {
-                                    hitOuterEdge = true;
-                                    targetEntryX = x;
-                                    targetEntryY = 10;
+                                    if (x >= RemoteVirtualMinX && x <= RemoteVirtualMaxX)
+                                    {
+                                        hitOuterEdge = true;
+                                        targetEntryX = (int)Math.Clamp(x - RemoteVirtualMinX, 0, RemoteScreenWidth - 1);
+                                        targetEntryY = 10;
+                                    }
                                 }
                                 break;
                         }
@@ -232,9 +251,10 @@ public class InputHook : IDisposable
                                     if (_remoteCursorX <= 0)
                                     {
                                         returnToLocal = true;
-                                        var m = _monitors.Find(m => m.Contains(x, _remoteCursorY)) ?? _monitors[0];
-                                        returnLocalX = m.Right - 20;
-                                        returnLocalY = _remoteCursorY;
+                                        int restoredY = (int)(_remoteCursorY + RemoteVirtualMinY);
+                                        var targetMon = _monitors.Find(m => restoredY >= m.Top && restoredY < m.Bottom) ?? _monitors[0];
+                                        returnLocalX = targetMon.Right - 20;
+                                        returnLocalY = Math.Clamp(restoredY, targetMon.Top + 10, targetMon.Bottom - 10);
                                     }
                                     break;
 
@@ -243,9 +263,10 @@ public class InputHook : IDisposable
                                     if (_remoteCursorX >= RemoteScreenWidth)
                                     {
                                         returnToLocal = true;
-                                        var m = _monitors.Find(m => m.Contains(x, _remoteCursorY)) ?? _monitors[0];
-                                        returnLocalX = m.Left + 20;
-                                        returnLocalY = _remoteCursorY;
+                                        int restoredY = (int)(_remoteCursorY + RemoteVirtualMinY);
+                                        var targetMon = _monitors.Find(m => restoredY >= m.Top && restoredY < m.Bottom) ?? _monitors[0];
+                                        returnLocalX = targetMon.Left + 20;
+                                        returnLocalY = Math.Clamp(restoredY, targetMon.Top + 10, targetMon.Bottom - 10);
                                     }
                                     break;
 
@@ -254,9 +275,10 @@ public class InputHook : IDisposable
                                     if (_remoteCursorY >= RemoteScreenHeight)
                                     {
                                         returnToLocal = true;
-                                        returnLocalX = _remoteCursorX;
-                                        var m = _monitors.Find(m => m.Contains(_remoteCursorX, y)) ?? _monitors[0];
-                                        returnLocalY = m.Top + 20;
+                                        int restoredX = (int)(_remoteCursorX + RemoteVirtualMinX);
+                                        var targetMon = _monitors.Find(m => restoredX >= m.Left && restoredX < m.Right) ?? _monitors[0];
+                                        returnLocalX = Math.Clamp(restoredX, targetMon.Left + 10, targetMon.Right - 10);
+                                        returnLocalY = targetMon.Top + 20;
                                     }
                                     break;
 
@@ -265,9 +287,10 @@ public class InputHook : IDisposable
                                     if (_remoteCursorY <= 0)
                                     {
                                         returnToLocal = true;
-                                        returnLocalX = _remoteCursorX;
-                                        var m = _monitors.Find(m => m.Contains(_remoteCursorX, y)) ?? _monitors[0];
-                                        returnLocalY = m.Bottom - 20;
+                                        int restoredX = (int)(_remoteCursorX + RemoteVirtualMinX);
+                                        var targetMon = _monitors.Find(m => restoredX >= m.Left && restoredX < m.Right) ?? _monitors[0];
+                                        returnLocalX = Math.Clamp(restoredX, targetMon.Left + 10, targetMon.Right - 10);
+                                        returnLocalY = targetMon.Bottom - 20;
                                     }
                                     break;
                             }

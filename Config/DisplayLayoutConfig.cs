@@ -25,6 +25,12 @@ public class DisplayLayoutConfig
 
     public EdgeDirection CurrentEdge { get; set; } = EdgeDirection.Right;
 
+    // Virtual space boundary bounds for remote screen
+    public double RemoteVirtualMinX { get; set; } = 1920;
+    public double RemoteVirtualMaxX { get; set; } = 3840;
+    public double RemoteVirtualMinY { get; set; } = 0;
+    public double RemoteVirtualMaxY { get; set; } = 1080;
+
     private static readonly string ConfigPath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
         "SharpKVM",
