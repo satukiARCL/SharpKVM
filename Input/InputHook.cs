@@ -6,6 +6,7 @@ using System.Threading;
 using SharpKVM.Config;
 using SharpKVM.Native;
 using SharpKVM.Protocol;
+using SharpKVM.Utils;
 
 namespace SharpKVM.Input;
 
@@ -23,6 +24,11 @@ public class InputHook : IDisposable
     private int _anchorX;
     private int _anchorY;
     private bool _isResettingCursor = false;
+
+    // Virtual remote cursor tracking for seamless edge-return
+    private int _remoteCursorX;
+    private int _remoteCursorY;
+    private DateTime _lastSwitchTime = DateTime.MinValue;
 
     public EdgeDirection ActiveEdge { get; set; } = EdgeDirection.Right;
     public bool IsControllingRemote { get; set; } = false;
@@ -46,7 +52,6 @@ public class InputHook : IDisposable
             });
         }
 
-        // Use primary monitor center as anchor
         var prim = _monitors.Find(m => m.IsPrimary) ?? _monitors[0];
         _anchorX = prim.Left + prim.Width / 2;
         _anchorY = prim.Top + prim.Height / 2;
@@ -74,6 +79,7 @@ public class InputHook : IDisposable
 
         if (_mouseHook == IntPtr.Zero || _keyboardHook == IntPtr.Zero)
         {
+            Logger.Error($"[InputHook] Failed to set hooks. Error: {Marshal.GetLastWin32Error()}");
             return;
         }
 
@@ -102,99 +108,94 @@ public class InputHook : IDisposable
             int x = hookStruct.pt.x;
             int y = hookStruct.pt.y;
 
+            // Prevent rapid bouncing between screens (300ms cooldown)
+            bool canSwitch = (DateTime.UtcNow - _lastSwitchTime).TotalMilliseconds > 300;
+
             if (!IsControllingRemote)
             {
-                // Edge detection
-                MonitorInfo? currentMonitor = null;
-                foreach (var mon in _monitors)
+                if (canSwitch)
                 {
-                    if (mon.Contains(x, y))
+                    MonitorInfo? currentMonitor = null;
+                    foreach (var mon in _monitors)
                     {
-                        currentMonitor = mon;
-                        break;
-                    }
-                }
-
-                if (currentMonitor != null)
-                {
-                    bool hitOuterEdge = false;
-                    int targetEntryX = 0;
-                    int targetEntryY = 0;
-
-                    switch (ActiveEdge)
-                    {
-                        case EdgeDirection.Right:
-                            if (x >= currentMonitor.Right - 1)
-                            {
-                                if (!IsAnyMonitorContains(x + 2, y))
-                                {
-                                    hitOuterEdge = true;
-                                    targetEntryX = 10; // Enter from left edge of remote screen
-                                    targetEntryY = y;
-                                }
-                            }
-                            break;
-
-                        case EdgeDirection.Left:
-                            if (x <= currentMonitor.Left)
-                            {
-                                if (!IsAnyMonitorContains(x - 2, y))
-                                {
-                                    hitOuterEdge = true;
-                                    targetEntryX = 1910; // Enter from right edge of remote screen
-                                    targetEntryY = y;
-                                }
-                            }
-                            break;
-
-                        case EdgeDirection.Top:
-                            if (y <= currentMonitor.Top)
-                            {
-                                if (!IsAnyMonitorContains(x, y - 2))
-                                {
-                                    hitOuterEdge = true;
-                                    targetEntryX = x;
-                                    targetEntryY = 1070; // Enter from bottom edge of remote screen
-                                }
-                            }
-                            break;
-
-                        case EdgeDirection.Bottom:
-                            if (y >= currentMonitor.Bottom - 1)
-                            {
-                                if (!IsAnyMonitorContains(x, y + 2))
-                                {
-                                    hitOuterEdge = true;
-                                    targetEntryX = x;
-                                    targetEntryY = 10; // Enter from top edge of remote screen
-                                }
-                            }
-                            break;
-                    }
-
-                    if (hitOuterEdge)
-                    {
-                        IsControllingRemote = true;
-                        OnRemoteControlStateChanged?.Invoke(true);
-
-                        // Tell remote PC where cursor enters
-                        OnPacketGenerated?.Invoke(new KvmPacket
+                        if (mon.Contains(x, y))
                         {
-                            Type = PacketType.SwitchScreen,
-                            Param1 = targetEntryX,
-                            Param2 = targetEntryY
-                        });
+                            currentMonitor = mon;
+                            break;
+                        }
+                    }
 
-                        // Position local cursor to anchor and start relative delta tracking
-                        _isResettingCursor = true;
-                        Win32.SetCursorPos(_anchorX, _anchorY);
-                        return (IntPtr)1;
+                    if (currentMonitor != null)
+                    {
+                        bool hitOuterEdge = false;
+                        int targetEntryX = 0;
+                        int targetEntryY = 0;
+
+                        switch (ActiveEdge)
+                        {
+                            case EdgeDirection.Right:
+                                if (x >= currentMonitor.Right - 1 && !IsAnyMonitorContains(x + 2, y))
+                                {
+                                    hitOuterEdge = true;
+                                    targetEntryX = 10;
+                                    targetEntryY = y;
+                                }
+                                break;
+
+                            case EdgeDirection.Left:
+                                if (x <= currentMonitor.Left && !IsAnyMonitorContains(x - 2, y))
+                                {
+                                    hitOuterEdge = true;
+                                    targetEntryX = 1910;
+                                    targetEntryY = y;
+                                }
+                                break;
+
+                            case EdgeDirection.Top:
+                                if (y <= currentMonitor.Top && !IsAnyMonitorContains(x, y - 2))
+                                {
+                                    hitOuterEdge = true;
+                                    targetEntryX = x;
+                                    targetEntryY = 1070;
+                                }
+                                break;
+
+                            case EdgeDirection.Bottom:
+                                if (y >= currentMonitor.Bottom - 1 && !IsAnyMonitorContains(x, y + 2))
+                                {
+                                    hitOuterEdge = true;
+                                    targetEntryX = x;
+                                    targetEntryY = 10;
+                                }
+                                break;
+                        }
+
+                        if (hitOuterEdge)
+                        {
+                            IsControllingRemote = true;
+                            _lastSwitchTime = DateTime.UtcNow;
+                            _remoteCursorX = targetEntryX;
+                            _remoteCursorY = targetEntryY;
+
+                            OnRemoteControlStateChanged?.Invoke(true);
+
+                            OnPacketGenerated?.Invoke(new KvmPacket
+                            {
+                                Type = PacketType.SwitchScreen,
+                                Param1 = targetEntryX,
+                                Param2 = targetEntryY
+                            });
+
+                            _isResettingCursor = true;
+                            Win32.SetCursorPos(_anchorX, _anchorY);
+                            return (IntPtr)1;
+                        }
                     }
                 }
             }
             else
             {
-                // In remote control mode: Relative Delta calculation
+                // In remote control mode
                 if (msg == Win32.WM_MOUSEMOVE)
                 {
                     if (_isResettingCursor)
@@ -211,6 +212,76 @@ public class InputHook : IDisposable
 
                     if (dx != 0 || dy != 0)
                     {
+                        _remoteCursorX += dx;
+                        _remoteCursorY += dy;
+
+                        // Check if cursor returns to local machine (Edge Return)
+                        bool returnToLocal = false;
+                        int returnLocalX = x;
+                        int returnLocalY = y;
+
+                        if (canSwitch)
+                        {
+                            switch (ActiveEdge)
+                            {
+                                case EdgeDirection.Right:
+                                    // Moving leftwards past the remote left edge returns to local right edge
+                                    if (_remoteCursorX <= 0)
+                                    {
+                                        returnToLocal = true;
+                                        var m = _monitors.Find(m => m.Contains(x, _remoteCursorY)) ?? _monitors[0];
+                                        returnLocalX = m.Right - 20;
+                                        returnLocalY = _remoteCursorY;
+                                    }
+                                    break;
+
+                                case EdgeDirection.Left:
+                                    // Moving rightwards past remote right edge returns to local left edge
+                                    if (_remoteCursorX >= 1920)
+                                    {
+                                        returnToLocal = true;
+                                        var m = _monitors.Find(m => m.Contains(x, _remoteCursorY)) ?? _monitors[0];
+                                        returnLocalX = m.Left + 20;
+                                        returnLocalY = _remoteCursorY;
+                                    }
+                                    break;
+
+                                case EdgeDirection.Top:
+                                    // Moving downwards past remote bottom edge returns to local top edge
+                                    if (_remoteCursorY >= 1080)
+                                    {
+                                        returnToLocal = true;
+                                        returnLocalX = _remoteCursorX;
+                                        var m = _monitors.Find(m => m.Contains(_remoteCursorX, y)) ?? _monitors[0];
+                                        returnLocalY = m.Top + 20;
+                                    }
+                                    break;
+
+                                case EdgeDirection.Bottom:
+                                    // Moving upwards past remote top edge returns to local bottom edge
+                                    if (_remoteCursorY <= 0)
+                                    {
+                                        returnToLocal = true;
+                                        returnLocalX = _remoteCursorX;
+                                        var m = _monitors.Find(m => m.Contains(_remoteCursorX, y)) ?? _monitors[0];
+                                        returnLocalY = m.Bottom - 20;
+                                    }
+                                    break;
+                            }
+                        }
+
+                        if (returnToLocal)
+                        {
+                            IsControllingRemote = false;
+                            _isResettingCursor = false;
+                            _lastSwitchTime = DateTime.UtcNow;
+
+                            OnRemoteControlStateChanged?.Invoke(false);
+                            Win32.SetCursorPos(returnLocalX, returnLocalY);
+                            return (IntPtr)1;
+                        }
+
+                        // Send delta to remote
                         OnPacketGenerated?.Invoke(new KvmPacket
                         {
                             Type = PacketType.MouseMove,
@@ -218,7 +289,6 @@ public class InputHook : IDisposable
                             Param2 = dy
                         });
 
-                        // Reset back to center anchor for next delta
                         _isResettingCursor = true;
                         Win32.SetCursorPos(_anchorX, _anchorY);
                     }
@@ -284,13 +354,14 @@ public class InputHook : IDisposable
             int msg = (int)wParam;
             bool isDown = (msg == Win32.WM_KEYDOWN || msg == Win32.WM_SYSKEYDOWN);
 
-            // Escape keys: ScrollLock or Pause
+            // Escape hotkeys
             if (hookStruct.vkCode == 0x91 /* VK_SCROLL */ || hookStruct.vkCode == 0x13 /* VK_PAUSE */)
             {
                 if (isDown && IsControllingRemote)
                 {
                     IsControllingRemote = false;
                     _isResettingCursor = false;
+                    _lastSwitchTime = DateTime.UtcNow;
                     OnRemoteControlStateChanged?.Invoke(false);
                     return (IntPtr)1;
                 }
