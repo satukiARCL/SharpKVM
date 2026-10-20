@@ -22,6 +22,7 @@ public partial class MainWindow : Window
     private readonly List<MonitorInfo> _monitors;
     private bool _isDragging = false;
     private Point _dragStartOffset;
+    private double _displayScale = 0.1;
 
     private Rect _localVirtualBoundsCanvas; // Canvas bounding box for all local monitors
 
@@ -90,7 +91,8 @@ public partial class MainWindow : Window
         // Max display area on canvas for local monitors
         double maxCanvasW = 320.0;
         double maxCanvasH = 220.0;
-        double scale = Math.Min(maxCanvasW / totalW, maxCanvasH / totalH);
+        _displayScale = Math.Min(maxCanvasW / totalW, maxCanvasH / totalH);
+        double scale = _displayScale;
 
         double baseLeft = 120.0;
         double baseTop = 80.0;
@@ -148,6 +150,11 @@ public partial class MainWindow : Window
             LocalMonitorsCanvas.Children.Add(border);
             index++;
         }
+
+        // Initially sync remote card size using the exact same display scale
+        RemoteMonitor.Width = Math.Max(80.0, 1920 * _displayScale);
+        RemoteMonitor.Height = Math.Max(50.0, 1080 * _displayScale);
+
         Logger.Info("Local monitors rendered successfully.");
     }
     catch (Exception ex)
@@ -341,11 +348,13 @@ public partial class MainWindow : Window
                 {
                     RemoteResolutionText.Text = $"{remoteW} × {remoteH} ({monitorCount}画面)";
 
-                    double baseHeight = 100.0;
-                    double aspect = (double)remoteW / Math.Max(1, remoteH);
-                    double newWidth = Math.Clamp(baseHeight * aspect, 120.0, 240.0);
+                    // Apply the exact same scale as local monitors
+                    double newWidth = Math.Max(80.0, remoteW * _displayScale);
+                    double newHeight = Math.Max(50.0, remoteH * _displayScale);
                     RemoteMonitor.Width = newWidth;
-                    RemoteMonitor.Height = baseHeight;
+                    RemoteMonitor.Height = newHeight;
+
+                    Logger.Info($"Updated RemoteMonitor card size to {newWidth:F0}x{newHeight:F0} (Scale: {_displayScale:F4})");
                 });
             }
         };
