@@ -1,4 +1,10 @@
 @echo off
-title SharpKVM Launcher
+title SharpKVM
 cd /d "%~dp0"
-start "" "C:\dev\dotnet\dotnet.exe" exec --runtimeconfig "bin\Debug\net10.0-windows\SharpKVM.runtimeconfig.json" "bin\Debug\net10.0-windows\SharpKVM.dll"
+if exist "SharpKVM.exe" (
+    start "" "SharpKVM.exe"
+) else if exist "publish\SharpKVM.exe" (
+    start "" "publish\SharpKVM.exe"
+) else (
+    start "" "bin\Debug\net10.0-windows\SharpKVM.exe"
+)
