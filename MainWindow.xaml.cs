@@ -12,6 +12,7 @@ using SharpKVM.Input;
 using SharpKVM.Native;
 using SharpKVM.Network;
 using SharpKVM.Protocol;
+using SharpKVM.Utils;
 
 namespace SharpKVM;
 
@@ -31,10 +32,26 @@ public partial class MainWindow : Window
 
     public MainWindow()
     {
+        Logger.Info("Initializing MainWindow...");
         InitializeComponent();
 
         _config = DisplayLayoutConfig.Load();
-        _monitors = MonitorInfo.GetAllMonitors();
+        Logger.Info($"Loaded config: RemoteHost={_config.RemoteHost}, Port={_config.Port}");
+
+        try
+        {
+            _monitors = MonitorInfo.GetAllMonitors();
+            Logger.Info($"Detected {_monitors.Count} monitors.");
+            foreach (var m in _monitors)
+            {
+                Logger.Info($" - Monitor '{m.Name}': Bounds=({m.Left},{m.Top},{m.Width}x{m.Height}), Primary={m.IsPrimary}");
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("Failed to enumerate monitors, falling back to default.", ex);
+            _monitors = new List<MonitorInfo>();
+        }
 
         Loaded += MainWindow_Loaded;
         Closing += (s, e) =>
@@ -42,6 +59,7 @@ public partial class MainWindow : Window
             StopAll();
             _config.Save();
         };
+        Logger.Info("MainWindow constructor completed.");
     }
 
     private void MainWindow_Loaded(object sender, RoutedEventArgs e)
@@ -52,11 +70,14 @@ public partial class MainWindow : Window
 
     private void RenderLocalMonitors()
     {
-        LocalMonitorsCanvas.Children.Clear();
+        try
+        {
+            Logger.Info("Rendering local monitors on canvas...");
+            LocalMonitorsCanvas.Children.Clear();
 
-        if (_monitors.Count == 0) return;
+            if (_monitors.Count == 0) return;
 
-        SubheaderText.Text = $"マルチディスプレイ検出: {_monitors.Count} 台のモニターがアクティブです";
+            SubheaderText.Text = $"マルチディスプレイ検出: {_monitors.Count} 台のモニターがアクティブです";
 
         int minX = _monitors.Min(m => m.Left);
         int minY = _monitors.Min(m => m.Top);
@@ -127,7 +148,13 @@ public partial class MainWindow : Window
             LocalMonitorsCanvas.Children.Add(border);
             index++;
         }
+        Logger.Info("Local monitors rendered successfully.");
     }
+    catch (Exception ex)
+    {
+        Logger.Error("Error rendering local monitors.", ex);
+    }
+}
 
     private void ApplyConfigToUI()
     {
