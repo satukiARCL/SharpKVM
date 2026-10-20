@@ -308,7 +308,70 @@ public partial class MainWindow : Window
             RemoteMonitor.ReleaseMouseCapture();
             UpdateRemoteVirtualBounds(Canvas.GetLeft(RemoteMonitor), Canvas.GetTop(RemoteMonitor), RemoteMonitor.ActualWidth, RemoteMonitor.ActualHeight);
             _config.Save();
+            SendLayoutSyncPacket();
         }
+    }
+
+    private void SendLayoutSyncPacket()
+    {
+        if (_client != null && _client.IsConnected)
+        {
+            _client.QueuePacket(new KvmPacket
+            {
+                Type = PacketType.SyncLayoutConfig,
+                Param1 = (int)_config.CurrentEdge,
+                Param2 = (int)_config.RemoteVirtualMinY,
+                Param3 = (int)_config.RemoteVirtualMinX
+            });
+            Logger.Info($"[Layout Sync] Sent master layout direction {_config.CurrentEdge} to receiver.");
+        }
+    }
+
+    private void ApplyLayoutDirectionToCanvas(EdgeDirection edge)
+    {
+        if (_localMonitorRects.Count == 0) return;
+
+        double remoteW = RemoteMonitor.ActualWidth;
+        double remoteH = RemoteMonitor.ActualHeight;
+        const double Spacing = 20.0;
+
+        var firstMon = _localMonitorRects[0];
+        double newX = Canvas.GetLeft(RemoteMonitor);
+        double newY = Canvas.GetTop(RemoteMonitor);
+
+        switch (edge)
+        {
+            case EdgeDirection.Left:
+                newX = firstMon.Left - remoteW - Spacing;
+                newY = firstMon.Top;
+                break;
+            case EdgeDirection.Right:
+                newX = firstMon.Right + Spacing;
+                newY = firstMon.Top;
+                break;
+            case EdgeDirection.Top:
+                newX = firstMon.Left;
+                newY = firstMon.Top - remoteH - Spacing;
+                break;
+            case EdgeDirection.Bottom:
+                newX = firstMon.Left;
+                newY = firstMon.Bottom + Spacing;
+                break;
+        }
+
+        newX = Math.Clamp(newX, 10, DisplayCanvas.ActualWidth - remoteW - 10);
+        newY = Math.Clamp(newY, 10, DisplayCanvas.ActualHeight - remoteH - 10);
+
+        Canvas.SetLeft(RemoteMonitor, newX);
+        Canvas.SetTop(RemoteMonitor, newY);
+
+        _config.RemoteCanvasX = newX;
+        _config.RemoteCanvasY = newY;
+        _config.CurrentEdge = edge;
+        _config.Save();
+
+        UpdateRemoteVirtualBounds(newX, newY, remoteW, remoteH);
+        Logger.Info($"[Layout Sync] Applied inverse layout to canvas: {edge} at ({newX:F0},{newY:F0})");
     }
 
     private void UpdateRemoteVirtualBounds(double canvasX, double canvasY, double canvasW, double canvasH)
@@ -424,6 +487,7 @@ public partial class MainWindow : Window
 
                     UpdateRemoteVirtualBounds(Canvas.GetLeft(RemoteMonitor), Canvas.GetTop(RemoteMonitor), newWidth, newHeight);
                     Logger.Info($"Updated RemoteMonitor card size to {newWidth:F0}x{newHeight:F0} (Scale: {_displayScale:F4})");
+                    SendLayoutSyncPacket();
                 });
             }
         };
@@ -432,6 +496,7 @@ public partial class MainWindow : Window
         {
             await _client.ConnectAsync(_cts.Token);
             SetStatus("接続中 (自PC操作中)", Color.FromRgb(59, 130, 246), Color.FromRgb(30, 58, 138), Color.FromRgb(59, 130, 246));
+            SendLayoutSyncPacket();
 
             _inputHook = new InputHook
             {
@@ -504,6 +569,30 @@ public partial class MainWindow : Window
                     break;
                 case PacketType.SwitchScreen:
                     InputSimulator.MoveMouse(packet.Param1, packet.Param2);
+                    break;
+                case PacketType.SyncLayoutConfig:
+                    var senderEdge = (EdgeDirection)packet.Param1;
+                    var inverseEdge = senderEdge switch
+                    {
+                        EdgeDirection.Right => EdgeDirection.Left,
+                        EdgeDirection.Left => EdgeDirection.Right,
+                        EdgeDirection.Top => EdgeDirection.Bottom,
+                        EdgeDirection.Bottom => EdgeDirection.Top,
+                        _ => EdgeDirection.Left
+                    };
+                    Logger.Info($"[Layout Sync] Received master layout from sender: {senderEdge} -> applying inverse {inverseEdge}");
+
+                    _config.CurrentEdge = inverseEdge;
+                    if (_inputHook != null)
+                    {
+                        _inputHook.ActiveEdge = inverseEdge;
+                    }
+
+                    Dispatcher.Invoke(() =>
+                    {
+                        ApplyLayoutDirectionToCanvas(inverseEdge);
+                        UpdateEdgeDirectionIndicator();
+                    });
                     break;
             }
         };
