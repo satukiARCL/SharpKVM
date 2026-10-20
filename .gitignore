@@ -2,12 +2,14 @@
 bin/
 obj/
 publish/
+publish-folder/
+*.zip
 *.user
 *.suo
 *.userosscache
 *.sln.docstates
 .vs/
 
-# SharpKVM Local Config
+# SharpKVM Local Config & Logs
 layout_config.json
 *.log
