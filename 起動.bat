@@ -1,10 +1,9 @@
 @echo off
-chcp 65001 >nul
-title SharpKVM Launcher (Diagnostic Mode)
+title SharpKVM Launcher
 cd /d "%~dp0"
 
 echo =======================================================
-echo  SharpKVM 起動ランチャー (診断・ログ出力モード)
+echo  SharpKVM Diagnostic Launcher
 echo =======================================================
 echo.
 
@@ -18,40 +17,34 @@ if exist "SharpKVM.exe" (
 )
 
 if "%TARGET_EXE%"=="" (
-    echo [エラー] SharpKVM.exe が見つかりません。
-    echo 現在のフォルダ: %CD%
+    echo [ERROR] SharpKVM.exe was not found.
+    echo Current Directory: %CD%
     dir
     goto FINISH
 )
 
-echo 実行対象: %TARGET_EXE%
-echo 起動中...
+echo Target: %TARGET_EXE%
+echo Starting process...
 echo.
 
-rem 直接フォアグラウンド実行（コンソール出力をそのまま表示）
 "%TARGET_EXE%"
 set EXIT_CODE=%ERRORLEVEL%
 
 echo.
 echo =======================================================
-echo プロセス終了 (終了コード: %EXIT_CODE%)
+echo Process exited with code: %EXIT_CODE%
 echo =======================================================
 
 if exist "sharpkvm.log" (
     echo.
-    echo --- 最新ログ (sharpkvm.log) ---
+    echo --- Content of sharpkvm.log ---
     type "sharpkvm.log"
     echo -------------------------------
 ) else (
-    echo [注意] sharpkvm.log が生成されませんでした。
-    if not "%EXIT_CODE%"=="0" (
-        echo アプリケーションが起動する前にOS（Smart App Control / セキュリティ機能）
-        echo によって実行が拒否された可能性があります。
-    )
+    echo [NOTE] sharpkvm.log was not generated.
 )
 
 :FINISH
 echo.
-echo [確認] このウィンドウは自動で閉じません。
-echo 終了するには何かキーを押してください...
+echo Press any key to exit...
 pause >nul
