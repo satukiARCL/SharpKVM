@@ -7,6 +7,22 @@ echo  SharpKVM Diagnostic Launcher
 echo =======================================================
 echo.
 
+rem 1. Local Development / Smart App Control Bypass mode
+if exist "C:\dev\dotnet\dotnet.exe" if exist "bin\Debug\net10.0-windows\SharpKVM.dll" (
+    echo [Mode] Using Microsoft-signed dotnet host to bypass Device Guard / Smart App Control...
+    echo.
+    "C:\dev\dotnet\dotnet.exe" exec --runtimeconfig "bin\Debug\net10.0-windows\SharpKVM.runtimeconfig.json" "bin\Debug\net10.0-windows\SharpKVM.dll"
+    goto PROCESS_ENDED
+)
+
+rem 2. Standalone folder mode
+if exist "SharpKVM.dll" (
+    echo [Mode] Standalone directory mode
+    dotnet exec SharpKVM.runtimeconfig.json SharpKVM.dll 2>nul
+    if %ERRORLEVEL%==0 goto PROCESS_ENDED
+)
+
+rem 3. Standalone EXE mode
 set TARGET_EXE=
 if exist "SharpKVM.exe" (
     set TARGET_EXE=SharpKVM.exe
@@ -28,6 +44,8 @@ echo Starting process...
 echo.
 
 "%TARGET_EXE%"
+
+:PROCESS_ENDED
 set EXIT_CODE=%ERRORLEVEL%
 
 echo.
